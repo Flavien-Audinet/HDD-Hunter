@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HDD Hunter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f4f4f2; --surface:#fcfcfb; --surface-2:#f0efec; --line:#e2e1dc;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#7c7b76;
+  --accent:#2a78d6; --good:#0a7d32; --good-bg:#e3f4e8; --warn:#9a6200; --warn-bg:#fdf0d5;
+  --bad:#c62828; --bad-bg:#fbe4e4; --info-bg:#e6effb;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+  --grid:#e8e7e3;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#111110; --surface:#1a1a19; --surface-2:#232321; --line:#2f2f2c;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#8f8e86;
+    --accent:#3987e5; --good:#5fd38a; --good-bg:#16301f; --warn:#f0b84a; --warn-bg:#33270f;
+    --bad:#ff8a80; --bad-bg:#3a1a1a; --info-bg:#172537;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+    --grid:#2a2a28;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111110; --surface:#1a1a19; --surface-2:#232321; --line:#2f2f2c;
+  --text:#f0efec; --text-2:#c3c2b7; --muted:#8f8e86;
+  --accent:#3987e5; --good:#5fd38a; --good-bg:#16301f; --warn:#f0b84a; --warn-bg:#33270f;
+  --bad:#ff8a80; --bad-bg:#3a1a1a; --info-bg:#172537;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  --grid:#2a2a28;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 24px;background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.01em}
+header .sub{color:var(--text-2);font-size:13px}
+header .spacer{flex:1}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--good);margin-right:6px}
+.dot.busy{background:var(--warn);animation:pulse 1s infinite alternate} @keyframes pulse{to{opacity:.3}}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--surface-2);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:hover{filter:brightness(1.05)}
+main{max-width:1500px;margin:0 auto;padding:20px 24px 60px;display:grid;gap:20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card h2{font-size:15px;margin:0 0 4px;font-weight:620}
+.card .hint{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.tile .k{color:var(--text-2);font-size:12.5px}
+.tile .v{font-size:26px;font-weight:650;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .d{color:var(--muted);font-size:12.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.filters{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.filters label{color:var(--text-2);font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.filters input[type=number]{width:78px;font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--text)}
+.chips{display:inline-flex;gap:4px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer;user-select:none;background:var(--surface-2);color:var(--text-2)}
+.chip.on{background:var(--info-bg);border-color:var(--accent);color:var(--text)}
+.grp{display:inline-flex;align-items:center;gap:8px}
+.grp>span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.charts{display:grid;grid-template-columns:2fr 1fr;gap:20px}
+@media(max-width:1000px){.charts{grid-template-columns:1fr}}
+.chartbox{position:relative;height:280px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--text-2);margin:6px 0 4px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.tablewrap{overflow-x:auto;margin:0 -18px;padding:0 18px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:left;color:var(--text-2);font-weight:560;font-size:12px;padding:8px 8px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;user-select:none}
+th.num,td.num{text-align:right}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer} tbody tr:hover{background:var(--surface-2)} tr.sel{background:var(--info-bg)!important}
+tr.nomatch td{color:var(--muted)}
+td.title{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11.5px;font-weight:560;white-space:nowrap}
+.b-new{background:var(--good-bg);color:var(--good)} .b-ref{background:var(--warn-bg);color:var(--warn)} .b-used{background:var(--bad-bg);color:var(--bad)}
+.b-sas{background:var(--warn-bg);color:var(--warn)} .b-ok{background:var(--good-bg);color:var(--good)} .b-bad{background:var(--bad-bg);color:var(--bad)} .b-mid{background:var(--warn-bg);color:var(--warn)}
+.price{font-weight:620}
+.low{color:var(--good);font-size:11.5px}
+.est{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px} @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+.src td{font-size:12.5px}
+.events{list-style:none;padding:0;margin:0;font-size:13px} .events li{padding:6px 0;border-bottom:1px solid var(--line)} .events time{color:var(--muted);font-size:12px;margin-right:8px}
+.manual a{display:inline-block;margin:0 10px 6px 0}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+#tip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;box-shadow:0 4px 18px rgba(0,0,0,.15);display:none;z-index:9;max-width:340px}
+@media(max-width:640px){header,main{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>HDD Hunter</h1><div class="sub">Disques serveur 7200 tr/min, livrés en France</div></div>
+  <div class="spacer"></div>
+  <div class="sub" id="state"><span class="dot"></span>…</div>
+  <button class="primary" id="scanBtn">Scanner maintenant</button>
+  <button id="themeBtn" title="Thème clair / sombre">◐</button>
+</header>
+
+<main>
+  <section class="tiles" id="tiles"></section>
+
+  <section class="card">
+    <h2>Critères</h2>
+    <p class="hint">Le tableau se met à jour tout de suite. « Enregistrer » sert aussi aux alertes (notification macOS) et au scan.</p>
+    <div class="filters">
+      <span class="grp"><span>Prix livré FR</span><label><input type="number" id="price_min" step="10"> à <input type="number" id="price_max" step="10"> €</label></span>
+      <span class="grp"><span>Capacité</span><label><input type="number" id="capacity_min"> à <input type="number" id="capacity_max"> To</label></span>
+      <span class="grp"><span>Cache</span><label><input type="number" id="cache_min"> à <input type="number" id="cache_max"> Mo</label></span>
+      <span class="grp"><span>État</span><span class="chips" data-key="conditions"><span class="chip" data-v="neuf">Neuf</span><span class="chip" data-v="reconditionné">Reconditionné</span><span class="chip" data-v="occasion">Occasion</span></span></span>
+      <span class="grp"><span>Gamme</span><span class="chips" data-key="classes"><span class="chip" data-v="serveur" title="Exos, Ultrastar, WD Gold, Toshiba MG">Serveur</span><span class="chip" data-v="nas_pro" title="IronWolf Pro, WD Red Pro, Toshiba N300, Synology HAT">NAS pro</span></span></span>
+      <span class="grp"><span>Interface</span><span class="chips" data-key="interfaces"><span class="chip" data-v="SATA">SATA</span><span class="chip" data-v="SAS" title="Nécessite une carte contrôleur SAS">SAS</span></span></span>
+      <span class="grp"><span>Scan toutes les</span><label><input type="number" id="interval_min" min="15" step="5"> min</label></span>
+      <label><input type="checkbox" id="notify"> Notifications</label>
+      <label><input type="checkbox" id="showAll"> Afficher aussi hors critères</label>
+      <button id="saveBtn">Enregistrer</button>
+    </div>
+  </section>
+
+  <section class="charts">
+    <div class="card">
+      <h2>Meilleur prix par capacité</h2>
+      <p class="hint">Prix livré France le plus bas de chaque jour, tous sites confondus (critères hors budget).</p>
+      <div class="legend" id="bestLegend"></div>
+      <div class="chartbox"><canvas id="bestChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2 id="histTitle">Historique d'une offre</h2>
+      <p class="hint" id="histHint">Cliquez une ligne du tableau.</p>
+      <div class="chartbox"><canvas id="histChart"></canvas></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 id="tableTitle">Offres</h2>
+    <p class="hint">Prix « livré FR » : pour une boutique d'un autre pays de l'UE, la TVA locale est remplacée par la TVA française (20 %), comme à la commande. Cache suivi de « ~ » : déduit de la gamme, non écrit sur la fiche.</p>
+    <div class="tablewrap"><table>
+      <thead><tr>
+        <th data-s="condition">État</th><th data-s="title">Disque</th><th data-s="capacity_tb" class="num">To</th>
+        <th data-s="cache_mb" class="num">Cache</th><th data-s="interface">Interface</th>
+        <th data-s="price_fr" class="num">Prix livré FR</th><th data-s="eur_tb" class="num">€/To</th>
+        <th data-s="site">Site</th><th data-s="country">Pays</th><th data-s="in_stock">Stock</th><th data-s="last_seen">Vu</th><th></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>Meilleur prix actuel par site</h2>
+    <p class="hint">Offre la moins chère correspondant aux critères, sur chaque boutique.</p>
+    <div class="chartbox" style="height:240px"><canvas id="siteChart"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2 id="urlTitle">Historique des URL</h2>
+    <p class="hint">Chaque lien déjà vu, même retiré de la vente, avec ses prix dans le temps. Un relevé est enregistré à chaque changement de prix ou de stock, et au moins toutes les 6 h.</p>
+    <div class="filters" style="margin-bottom:10px">
+      <label><input type="search" id="urlSearch" placeholder="Filtrer : exos 24, amazon_it, B0DH…" style="width:260px;font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--text)"></label>
+      <label><input type="checkbox" id="urlCrit" checked> Seulement les disques dans mes critères (hors prix)</label>
+      <label><input type="checkbox" id="urlGone"> Inclure les offres retirées</label>
+      <a class="btn" href="/api/export.csv">Exporter tout en CSV (Excel)</a>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th data-u="title">Disque / URL</th><th data-u="site">Site</th><th data-u="condition">État</th>
+        <th data-u="first" class="num">1er relevé</th><th data-u="p0" class="num">Prix de départ</th><th data-u="last" class="num">Prix actuel</th>
+        <th data-u="min" class="num">Min</th><th data-u="max" class="num">Max</th><th data-u="delta" class="num">Évolution</th>
+        <th data-u="n" class="num">Relevés</th><th>Courbe</th></tr></thead>
+      <tbody id="urlRows"></tbody>
+    </table></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <h2>Sites surveillés</h2>
+      <p class="hint">Uniquement des boutiques connues avec droit de retour et garantie. Un site qui refuse les robots est mis en pause automatiquement, sans insister.</p>
+      <div class="tablewrap"><table class="src"><thead><tr><th>Site</th><th>Statut</th><th class="num">Lus</th><th class="num">OK</th><th>Dernier scan</th><th>Actif</th></tr></thead><tbody id="srcRows"></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Alertes</h2>
+      <p class="hint">Nouvelles offres dans vos critères et baisses de plus de 3 %.</p>
+      <ul class="events" id="events"></ul>
+      <h2 style="margin-top:18px">À vérifier à la main</h2>
+      <p class="hint">Ces comparateurs et boutiques bloquent la lecture automatique : un clic ouvre la recherche.</p>
+      <div class="manual">
+        <a target="_blank" href="https://www.idealo.fr/prechcat.html?q=seagate+exos">idealo.fr</a>
+        <a target="_blank" href="https://ledenicheur.fr/search?search=seagate%20exos">LeDénicheur</a>
+        <a target="_blank" href="https://geizhals.eu/?fs=seagate+exos">Geizhals (DE/AT)</a>
+        <a target="_blank" href="https://www.amazon.fr/s?k=seagate+exos">Amazon.fr</a>
+        <a target="_blank" href="https://www.proshop.fr/?s=seagate+exos">Proshop</a>
+        <a target="_blank" href="https://serverpartdeals.com/collections/manufacturer-recertified-drives">ServerPartDeals (US, +douane)</a>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="tip"></div>
+<script src="/api/boot.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const FLAGS = {FR:"🇫🇷",DE:"🇩🇪",IT:"🇮🇹",ES:"🇪🇸",NL:"🇳🇱",BE:"🇧🇪",US:"🇺🇸"};
+const CAPS = [16,18,20,22,24,26,28];      // la couleur suit la capacité, jamais le rang
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const capColor = c => css("--s" + ((CAPS.indexOf(Math.round(c)) + 8) % 8 + 1));
+const eur = v => v == null ? "—" : v.toLocaleString("fr-FR",{maximumFractionDigits: v < 100 ? 1 : 0}) + " €";
+const ago = ts => { if(!ts) return "—"; const s = Date.now()/1000 - ts;
+  if (s < 90) return "à l'instant"; if (s < 3600) return Math.round(s/60) + " min";
+  if (s < 86400) return Math.round(s/3600) + " h"; return Math.round(s/86400) + " j"; };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let cfg = {}, offers = [], status = {}, sortKey = "price_fr", sortDir = 1, selected = null;
+let bestChart, histChart, siteChart;
+
+// ---------- thème ----------
+try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch(e) {}
+$("#themeBtn").onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark"
+             : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch(e) {}
+  drawAll();
+};
+
+// ---------- critères ----------
+const NUM = ["price_min","price_max","capacity_min","capacity_max","cache_min","cache_max","interval_min"];
+function fillForm(){
+  NUM.forEach(k => $("#"+k).value = cfg[k]);
+  $("#notify").checked = cfg.notify;
+  document.querySelectorAll(".chips").forEach(g => g.querySelectorAll(".chip").forEach(c =>
+    c.classList.toggle("on", cfg[g.dataset.key].includes(c.dataset.v))));
+}
+function readForm(){
+  const c = {...cfg};
+  NUM.forEach(k => c[k] = Number($("#"+k).value));
+  c.notify = $("#notify").checked;
+  document.querySelectorAll(".chips").forEach(g =>
+    c[g.dataset.key] = [...g.querySelectorAll(".chip.on")].map(x => x.dataset.v));
+  return c;
+}
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => { c.classList.toggle("on"); cfg = readForm(); drawAll(); });
+NUM.forEach(k => $("#"+k).addEventListener("input", () => { cfg = readForm(); drawAll(); }));
+$("#showAll").onchange = drawAll;
+$("#saveBtn").onclick = async () => {
+  cfg = await (await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(readForm())})).json();
+  $("#saveBtn").textContent = "Enregistré ✓"; setTimeout(() => $("#saveBtn").textContent = "Enregistrer", 1500);
+  loadBest();
+};
+
+function matches(o, c = cfg){
+  return o.price_fr != null && o.price_fr >= c.price_min && o.price_fr <= c.price_max
+    && o.capacity_tb >= c.capacity_min && o.capacity_tb <= c.capacity_max && o.rpm === c.rpm
+    && o.cache_mb != null && o.cache_mb >= c.cache_min && o.cache_mb <= c.cache_max
+    && c.classes.includes(o.klass) && c.conditions.includes(o.condition) && c.interfaces.includes(o.interface)
+    && o.in_stock !== 0;
+}
+
+// ---------- données ----------
+async function load(){
+  [offers, status] = await Promise.all([fetch("/api/offers").then(r => r.json()), fetch("/api/status").then(r => r.json())]);
+  drawAll(); drawStatus();
+}
+async function loadBest(){ bestData = await fetch("/api/best?days=120").then(r => r.json()); drawBest(); }
+let bestData = [];
+
+function drawAll(){ drawTiles(); drawTable(); drawSites(); drawBest(); if (selected) drawHist(selected); }
+
+function visible(){
+  const all = $("#showAll").checked;
+  return offers.filter(o => all || matches(o)).sort((a,b) => {
+    let x = a[sortKey], y = b[sortKey]; if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir; });
+}
+
+function drawTiles(){
+  const m = offers.filter(o => matches(o));
+  const best = [...m].sort((a,b) => a.price_fr - b.price_fr)[0];
+  const bestTb = [...m].sort((a,b) => a.eur_tb - b.eur_tb)[0];
+  const src = status.sources || [];
+  const okSrc = src.filter(s => s.enabled && s.last && s.last.status === "ok").length;
+  const refurb = m.filter(o => o.condition !== "neuf").length;
+  const name = o => o ? `${o.family || o.brand} ${o.capacity_tb} To · ${o.site} ${FLAGS[o.country]||o.country}` : "aucune offre";
+  $("#tiles").innerHTML = `
+    <div class="tile"><div class="k">Offres dans vos critères</div><div class="v">${m.length}</div><div class="d">${m.length - refurb} neuves · ${refurb} reconditionnées</div></div>
+    <div class="tile"><div class="k">Prix le plus bas</div><div class="v">${best ? eur(best.price_fr) : "—"}</div><div class="d">${esc(name(best))}</div></div>
+    <div class="tile"><div class="k">Meilleur prix au To</div><div class="v">${bestTb ? eur(bestTb.eur_tb) : "—"}</div><div class="d">${esc(name(bestTb))}</div></div>
+    <div class="tile"><div class="k">Sites lus au dernier passage</div><div class="v">${okSrc} / ${src.filter(s=>s.enabled).length}</div><div class="d">${status.history_points ?? 0} relevés de prix en mémoire</div></div>`;
+}
+
+const SRC_LABEL = {"référence": "d'après la référence", "fiche": "d'après la fiche produit", "avis": "d'après les avis clients"};
+function condBadge(o){
+  const c = typeof o === "string" ? o : o.condition, src = o.condition_src, note = o.condition_note || "";
+  const inferred = src && src !== "titre";
+  const tip = note ? ` title="${esc((inferred ? "Détecté " + SRC_LABEL[src] + ". " : "") + note)}"` : "";
+  if (c === "neuf") return `<span class="badge b-new"${tip}>Neuf${note ? " ⚠" : ""}</span>`;
+  if (c === "occasion") return `<span class="badge b-used"${tip}>Occasion${inferred ? " *" : ""}</span>`;
+  return `<span class="badge b-ref"${tip}>Reconditionné${inferred ? " *" : ""}</span>`;
+}
+
+function drawTable(){
+  const rows = visible();
+  $("#tableTitle").textContent = `Offres (${rows.length})`;
+  if (!rows.length){ $("#rows").innerHTML = `<tr><td colspan="12" class="empty">Aucune offre pour l'instant${status.running ? " — scan en cours…" : ""}. Élargissez les critères ou cochez « Afficher aussi hors critères ».</td></tr>`; return; }
+  $("#rows").innerHTML = rows.map(o => {
+    const src = (status.sources||[]).find(s => s.key === o.source) || {};
+    const low = o.lowest != null && o.lowest < o.price_fr - 0.5 ? `<div class="low">mini vu ${eur(o.lowest)}</div>` : "";
+    const ship = src.ships_fr === "oui" ? "" : ` title="Livraison FR : ${esc(src.ships_fr)}"`;
+    return `<tr data-id="${o.id}" class="${matches(o) ? "" : "nomatch"} ${selected && selected.id === o.id ? "sel" : ""}">
+      <td>${condBadge(o)}</td>
+      <td class="title" title="${esc(o.title)}">${esc(o.title)}</td>
+      <td class="num">${o.capacity_tb}</td>
+      <td class="num">${o.cache_mb ?? "?"}${o.cache_estimated ? '<span class="est">~</span>' : ""}</td>
+      <td>${o.interface === "SAS" ? '<span class="badge b-sas" title="Nécessite une carte contrôleur SAS">SAS</span>' : "SATA"}</td>
+      <td class="num"><span class="price">${eur(o.price_fr)}</span>${low}</td>
+      <td class="num">${o.eur_tb ?? "—"}</td>
+      <td>${esc(o.site)}${o.seller ? `<div class="est" style="font-size:11.5px">${esc(o.seller)}</div>` : ""}</td>
+      <td${ship}>${FLAGS[o.country] || ""} ${o.country}${src.ships_fr === "oui" ? "" : " *"}</td>
+      <td>${o.in_stock === 1 ? '<span class="badge b-ok">En stock</span>' : o.in_stock === 0 ? '<span class="badge b-bad">Rupture</span>' : '<span class="est">?</span>'}</td>
+      <td class="est">${ago(o.last_seen)}</td>
+      <td><a href="${esc(o.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Voir ↗</a></td></tr>`;
+  }).join("");
+  document.querySelectorAll("#rows tr[data-id]").forEach(tr => tr.onclick = () => {
+    selected = offers.find(o => o.id == tr.dataset.id); drawTable(); drawHist(selected); });
+}
+document.querySelectorAll("th[data-s]").forEach(th => th.onclick = () => {
+  const k = th.dataset.s; sortDir = sortKey === k ? -sortDir : 1; sortKey = k; drawTable(); });
+
+// ---------- graphiques ----------
+function baseOpts(){
+  const t2 = css("--text-2"), grid = css("--grid");
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = t2;
+  return { responsive:true, maintainAspectRatio:false, animation:false,
+    interaction:{mode:"index", intersect:false},
+    plugins:{legend:{display:false}, tooltip:{backgroundColor:css("--surface"), titleColor:css("--text"), bodyColor:css("--text-2"),
+      borderColor:css("--line"), borderWidth:1, padding:10, boxPadding:4, usePointStyle:true}},
+    scales:{ x:{grid:{display:false}, border:{color:grid}, ticks:{maxRotation:0, autoSkipPadding:16}},
+             y:{grid:{color:grid}, border:{display:false}, ticks:{callback:v => v + " €"}} } };
+}
+
+function drawBest(){
+  const caps = [...new Set(bestData.map(d => d.capacity_tb))].sort((a,b) => a-b);
+  const days = [...new Set(bestData.map(d => d.day))].sort();
+  const label = d => new Date(d + "T12:00").toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
+  const ds = caps.map(c => ({ label: c + " To", borderColor: capColor(c), backgroundColor: capColor(c),
+    data: days.map(d => (bestData.find(x => x.day === d && x.capacity_tb === c) || {}).price ?? null),
+    borderWidth:2, pointRadius: days.length < 3 ? 4 : 0, pointHoverRadius:5, spanGaps:true, tension:0 }));
+  $("#bestLegend").innerHTML = caps.map(c => `<span><i style="background:${capColor(c)}"></i>${c} To</span>`).join("")
+    || '<span class="est">Pas encore de données — le premier scan remplit le graphique.</span>';
+  const o = baseOpts();
+  o.plugins.tooltip.callbacks = {label: c => ` ${c.dataset.label} : ${eur(c.parsed.y)}`};
+  o.plugins.tooltip.itemSort = (a,b) => a.parsed.y - b.parsed.y;
+  bestChart?.destroy();
+  bestChart = new Chart($("#bestChart"), {type:"line", data:{labels: days.map(label), datasets: ds}, options:o});
+}
+
+async function drawHist(o){
+  const pts = await fetch("/api/history/" + o.id).then(r => r.json());
+  $("#histTitle").textContent = `${o.family || o.brand} ${o.capacity_tb} To — ${o.site} ${o.country}`;
+  const lo = Math.min(...pts.map(p => p.price_fr)), hi = Math.max(...pts.map(p => p.price_fr));
+  $("#histHint").innerHTML = `${pts.length} relevé(s) · plus bas ${eur(lo)} · plus haut ${eur(hi)} · <a href="${esc(o.url)}" target="_blank">ouvrir la fiche ↗</a>`;
+  const now = Date.now()/1000;
+  const data = pts.map(p => ({x: p.ts, y: p.price_fr}));
+  if (data.length) data.push({x: Math.max(now, data[data.length-1].x), y: data[data.length-1].y});  // prolonge jusqu'à maintenant
+  const opt = baseOpts();
+  opt.scales.x = {type:"linear", grid:{display:false}, border:{color:css("--grid")},
+    ticks:{maxTicksLimit:6, maxRotation:0, callback: v => new Date(v*1000).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}};
+  opt.plugins.tooltip.callbacks = {title: it => new Date(it[0].parsed.x*1000).toLocaleString("fr-FR",{dateStyle:"medium",timeStyle:"short"}),
+    label: c => " " + eur(c.parsed.y)};
+  opt.scales.y.suggestedMin = lo * 0.95; opt.scales.y.suggestedMax = hi * 1.05;
+  histChart?.destroy();
+  histChart = new Chart($("#histChart"), {type:"line", data:{datasets:[{data, stepped:"before", borderColor:css("--s1"),
+    backgroundColor:css("--s1"), borderWidth:2, pointRadius: data.length < 20 ? 4 : 0, pointHoverRadius:5}]}, options:opt});
+}
+
+function drawSites(){
+  const m = offers.filter(o => matches(o));
+  const by = {};
+  m.forEach(o => { const k = `${o.site} ${o.country}`; if (!by[k] || o.price_fr < by[k].price_fr) by[k] = o; });
+  const items = Object.entries(by).sort((a,b) => a[1].price_fr - b[1].price_fr);
+  const opt = baseOpts();
+  opt.indexAxis = "y"; opt.interaction = {mode:"nearest", axis:"y", intersect:false};
+  opt.scales = { x:{grid:{color:css("--grid")}, border:{display:false}, ticks:{callback:v => v + " €"}},
+                 y:{grid:{display:false}, border:{color:css("--grid")}} };
+  opt.plugins.tooltip.callbacks = {label: c => { const o = items[c.dataIndex][1];
+    return [` ${eur(o.price_fr)} · ${o.family || o.brand} ${o.capacity_tb} To`, ` ${o.condition} · ${o.eur_tb} €/To`]; }};
+  siteChart?.destroy();
+  siteChart = new Chart($("#siteChart"), {type:"bar", data:{labels: items.map(i => i[0]),
+    datasets:[{data: items.map(i => i[1].price_fr), backgroundColor: css("--s1"), borderRadius:4, borderSkipped:"start", barThickness:14}]}, options:opt});
+  $("#siteChart").onclick = e => { const p = siteChart.getElementsAtEventForMode(e, "nearest", {intersect:false, axis:"y"}, false)[0];
+    if (p) window.open(items[p.index][1].url, "_blank"); };
+}
+
+// ---------- statut ----------
+// ---------- historique des URL ----------
+let urlData = [], uSort = "last", uDir = 1;
+async function loadUrls(){ urlData = await fetch("/api/urls").then(r => r.json()); drawUrls(); }
+function spark(pts){
+  if (pts.length < 2) return '<span class="est">—</span>';
+  const W = 110, H = 26, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const X = x => 2 + (x1 > x0 ? (x - x0) / (x1 - x0) : 0) * (W - 4), Y = y => H - 3 - (y1 > y0 ? (y - y0) / (y1 - y0) : .5) * (H - 6);
+  let d = `M${X(xs[0]).toFixed(1)},${Y(ys[0]).toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${X(xs[i]).toFixed(1)}V${Y(ys[i]).toFixed(1)}`;   // en escalier
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--s1)" stroke-width="1.5"/>
+    <circle cx="${X(xs.at(-1))}" cy="${Y(ys.at(-1))}" r="2.5" fill="var(--s1)"/></svg>`;
+}
+function drawUrls(){
+  const q = $("#urlSearch").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const crit = $("#urlCrit").checked, gone = $("#urlGone").checked;
+  const any = {...cfg, price_min: 0, price_max: 1e9};
+  let rows = urlData.map(o => { const ys = o.points.map(p => p[1]);
+    return {...o, first: o.points[0][0], p0: ys[0], last: ys.at(-1), min: Math.min(...ys), max: Math.max(...ys),
+            delta: (ys.at(-1) - ys[0]) / ys[0] * 100, n: ys.length}; })
+    .filter(o => (gone || o.active) && (!crit || matches({...o, price_fr: o.last, in_stock: 1}, any)))
+    .filter(o => q.every(w => `${o.title} ${o.url} ${o.site} ${o.country} ${o.condition} ${o.seller || ""}`.toLowerCase().includes(w)));
+  rows.sort((a, b) => { const x = a[uSort], y = b[uSort]; return (typeof x === "string" ? x.localeCompare(y) : x - y) * uDir; });
+  $("#urlTitle").textContent = `Historique des URL (${rows.length})`;
+  const dt = ts => new Date(ts * 1000).toLocaleDateString("fr-FR", {day: "numeric", month: "short", year: "2-digit"});
+  $("#urlRows").innerHTML = rows.slice(0, 300).map(o => `<tr>
+    <td class="title" title="${esc(o.title)}"><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a>
+      <div class="est" style="font-size:11.5px">${esc(o.url.replace(/^https?:\/\/(www\.)?/, ""))}${o.active ? "" : " · retiré de la vente"}</div></td>
+    <td>${esc(o.site)} ${FLAGS[o.country] || o.country}</td>
+    <td>${condBadge(o)}</td>
+    <td class="num est">${dt(o.first)}</td>
+    <td class="num">${eur(o.p0)}</td>
+    <td class="num"><span class="price">${eur(o.last)}</span></td>
+    <td class="num">${eur(o.min)}</td><td class="num">${eur(o.max)}</td>
+    <td class="num" style="color:${o.delta < -0.5 ? "var(--good)" : o.delta > 0.5 ? "var(--bad)" : "var(--muted)"}">${o.delta > 0 ? "+" : ""}${o.delta.toFixed(1)} %</td>
+    <td class="num">${o.n}</td><td>${spark(o.points)}</td></tr>`).join("")
+    || '<tr><td colspan="11" class="empty">Aucun relevé.</td></tr>';
+}
+["#urlSearch", "#urlCrit", "#urlGone"].forEach(s => $(s).addEventListener("input", drawUrls));
+document.querySelectorAll("th[data-u]").forEach(th => th.onclick = () => {
+  const k = th.dataset.u; uDir = uSort === k ? -uDir : 1; uSort = k; drawUrls(); });
+
+function drawStatus(){
+  const s = status;
+  const nxt = s.next_run ? Math.max(0, Math.round((s.next_run - s.now)/60)) : null;
+  $("#state").innerHTML = s.running ? `<span class="dot busy"></span>Scan en cours : ${esc(s.current)}`
+    : `<span class="dot"></span>Prochain scan dans ${nxt ?? "?"} min`;
+  const badge = st => !st ? '<span class="badge b-mid">jamais</span>'
+    : st.status === "ok" ? '<span class="badge b-ok">ok</span>'
+    : st.status === "bloqué" ? '<span class="badge b-bad">bloqué</span>' : `<span class="badge b-mid">${esc(st.status)}</span>`;
+  $("#srcRows").innerHTML = s.sources.map(x => {
+    const info = `Livraison FR : ${x.ships_fr}\nRetours : ${x.returns}\nGarantie neuf : ${x.warranty_new}\nReconditionné : ${x.warranty_refurb}` + (x.notes.length ? "\n" + x.notes.join("\n") : "");
+    return `<tr title="${esc(info)}"><td>${esc(x.site)} ${FLAGS[x.country]||""} <span class="est">${esc(x.domain.replace("www.",""))}</span></td>
+      <td>${badge(x.last)} <span class="est" style="font-size:11.5px">${esc(x.last?.message || "")}</span></td>
+      <td class="num">${x.last?.found ?? "—"}</td><td class="num">${x.last?.matched ?? "—"}</td>
+      <td class="est">${ago(x.last?.finished)}</td>
+      <td><input type="checkbox" data-src="${x.key}" ${x.enabled ? "checked" : ""}></td></tr>`; }).join("");
+  document.querySelectorAll("[data-src]").forEach(cb => cb.onchange = async () => {
+    const dis = new Set(cfg.disabled_sources); cb.checked ? dis.delete(cb.dataset.src) : dis.add(cb.dataset.src);
+    cfg = await (await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({disabled_sources:[...dis]})})).json();
+  });
+  $("#events").innerHTML = s.events.length ? s.events.map(e => {
+    const o = offers.find(x => x.id === e.offer_id);
+    return `<li><time>${new Date(e.ts*1000).toLocaleString("fr-FR",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</time>
+      <span class="badge ${e.kind === "baisse" ? "b-ok" : "b-mid"}">${e.kind === "baisse" ? "baisse" : "nouveau"}</span> ${o ? `<a href="${esc(o.url)}" target="_blank">${esc(e.text)}</a>` : esc(e.text)}</li>`; }).join("")
+    : '<li class="est">Aucune alerte pour le moment.</li>';
+}
+
+$("#scanBtn").onclick = async () => { await fetch("/api/scan", {method:"POST"}); setTimeout(load, 800); };
+
+(async () => {
+  const B = window.BOOT;
+  if (B) { cfg = B.cfg; offers = B.offers; status = B.status; bestData = B.best; urlData = B.urls || []; fillForm(); drawAll(); drawStatus(); drawUrls(); }
+  else { cfg = await fetch("/api/config").then(r => r.json()); fillForm(); await load(); loadBest(); }
+  if (!B) loadUrls();
+  setInterval(load, 20000); setInterval(loadBest, 300000); setInterval(loadUrls, 300000);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+})();
+</script>
+</body>
+</html>
