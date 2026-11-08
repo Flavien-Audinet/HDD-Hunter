@@ -10,6 +10,7 @@ Seagate Exos · WD Ultrastar / Gold · Toshiba MG — neufs ou reconditionnés, 
 ![FastAPI](https://img.shields.io/badge/FastAPI-UI%20locale-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-historique-003B57?logo=sqlite)
 ![macOS](https://img.shields.io/badge/macOS-service%2024%2F7-000?logo=apple)
+![Licence](https://img.shields.io/badge/licence-tous%20droits%20réservés-red)
 ![Version](https://img.shields.io/badge/version-1.0.0-2ea44f)
 
 </div>
@@ -153,6 +154,12 @@ Données (hors dépôt) : `~/Library/Application Support/HDDHunter/` — `hddhun
 - [ ] détection du reconditionné sur les fiches des boutiques françaises (aujourd'hui : titre et référence).
 
 Si un site change sa mise en page, son état passe à « vide » ou « erreur » dans l'interface : `tests/try_source.py` permet de le tester seul.
+
+---
+
+## 📜 Licence
+
+**Tous droits réservés.** Tu peux consulter, télécharger et utiliser le logiciel gratuitement ; la modification, la revente et la redistribution sont interdites sans accord écrit. Détails : [LICENSE.md](LICENSE.md).
 
 ---
 
