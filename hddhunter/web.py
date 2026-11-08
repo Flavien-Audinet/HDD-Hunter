@@ -53,30 +53,52 @@ def create_app(scanner) -> FastAPI:
     @app.get("/api/history/{offer_id}")
     def history(offer_id: int):
         con = db.connect()
-        pts = [dict(r) for r in con.execute("SELECT ts, price_fr, in_stock FROM prices WHERE offer_id=? ORDER BY ts", (offer_id,))]
+        pts = [dict(r) for r in con.execute("SELECT ts, price_fr, in_stock, seller FROM prices WHERE offer_id=? ORDER BY ts", (offer_id,))]
         con.close()
         return pts
 
     @app.get("/api/best")
     def best(days: int = 90):
         """Meilleur prix (critères de recherche) par jour et par capacité."""
+        # Un relevé n'est enregistré que quand le prix change (ou toutes les 6 h) : pour chaque jour, chaque
+        # offre en vente compte au prix qu'elle avait ce jour-là, y compris celui hérité des jours précédents.
+        import datetime as dt
         cfg = db.load_config()
         con = db.connect()
-        since = time.time() - days * 86400
-        rows = con.execute(
-            """SELECT p.ts, p.price_fr, p.in_stock, o.* FROM prices p JOIN offers o ON o.id=p.offer_id
-               WHERE p.ts>=?""", (since,)).fetchall()
+        offers = {r["id"]: dict(r) for r in con.execute("SELECT * FROM offers")}
+        points: dict[int, list] = {}
+        for r in con.execute("SELECT offer_id, ts, price_fr, in_stock FROM prices ORDER BY ts"):
+            points.setdefault(r["offer_id"], []).append((r["ts"], r["price_fr"], r["in_stock"]))
         con.close()
-        best: dict[tuple[str, float], float] = {}
         any_price = dict(cfg, price_min=0, price_max=10**9)  # la courbe montre aussi les prix hors budget
-        for r in rows:
-            o = dict(r)   # prix et stock de ce point d'historique
-            if not db.matches(o, any_price):
+        today = dt.date.today()
+        first_day = max(dt.date.fromtimestamp(time.time() - days * 86400),
+                        min((dt.date.fromtimestamp(p[0][0]) for p in points.values()), default=today))
+        best: dict[tuple[str, float], float] = {}
+        for oid, pts in points.items():
+            o = offers.get(oid)
+            if not o or not o["capacity_tb"]:
                 continue
-            day = time.strftime("%Y-%m-%d", time.localtime(r["ts"]))
-            k = (day, r["capacity_tb"])
-            best[k] = min(best.get(k, 1e12), r["price_fr"])
-        return [dict(day=d, capacity_tb=c, price=p) for (d, c), p in sorted(best.items())]
+            on_sale_until = time.time() if o["active"] else (o["last_seen"] or pts[-1][0])
+            i, current = 0, None                       # current = dernier relevé connu avant le jour courant
+            day = first_day
+            while day <= today:
+                start = dt.datetime.combine(day, dt.time()).timestamp()
+                end = start + 86400
+                while i < len(pts) and pts[i][0] < start:
+                    current = pts[i]; i += 1
+                if start > on_sale_until:
+                    break
+                todays = [current] if current else []
+                j = i
+                while j < len(pts) and pts[j][0] < end:
+                    todays.append(pts[j]); j += 1
+                for _, price, stock in todays:
+                    if price is not None and db.matches(dict(o, price_fr=price, in_stock=stock), any_price):
+                        k = (day.isoformat(), o["capacity_tb"])
+                        best[k] = min(best.get(k, 1e12), price)
+                day += dt.timedelta(days=1)
+        return [dict(day=d, capacity_tb=c, price=round(p, 2)) for (d, c), p in sorted(best.items())]
 
     @app.get("/api/status")
     def status():
@@ -103,9 +125,9 @@ def create_app(scanner) -> FastAPI:
             "condition_note, seller, active, first_seen, last_seen, price_fr, in_stock, rpm, cache_mb, klass, interface FROM offers")}
         for o in offs.values():
             o["points"] = []
-        for r in con.execute("SELECT offer_id, ts, price_fr FROM prices ORDER BY ts"):
+        for r in con.execute("SELECT offer_id, ts, price_fr, seller FROM prices ORDER BY ts"):
             if r["offer_id"] in offs:
-                offs[r["offer_id"]]["points"].append([round(r["ts"]), r["price_fr"]])
+                offs[r["offer_id"]]["points"].append([round(r["ts"]), r["price_fr"], r["seller"] or ""])
         con.close()
         return [o for o in offs.values() if o["points"]]
 
@@ -116,7 +138,7 @@ def create_app(scanner) -> FastAPI:
         from fastapi.responses import Response
         con = db.connect()
         rows = con.execute(
-            """SELECT p.ts, o.url, o.site, o.country, o.title, o.capacity_tb, o.condition, o.seller,
+            """SELECT p.ts, o.url, o.site, o.country, o.title, o.capacity_tb, o.condition, p.seller,
                       p.price_fr, p.in_stock, o.active
                FROM prices p JOIN offers o ON o.id=p.offer_id ORDER BY o.url, p.ts""").fetchall()
         con.close()

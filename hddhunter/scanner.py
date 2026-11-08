@@ -18,7 +18,8 @@ log = logging.getLogger("hddhunter")
 KEEP_CLASSES = (specs.SERVER, specs.NAS_PRO)
 HISTORY_EVERY = 6 * 3600       # un point d'historique au moins toutes les 6 h, sinon à chaque changement
 PAGE_RECHECK = 7 * 86400       # relecture d'une fiche Amazon (état, vendeur) au plus une fois par semaine
-PAGES_PER_SCAN = 15            # fiches lues au maximum par boutique et par passage
+PAGES_PER_SCAN = 15            # fiches lues au maximum par boutique et par passage (vérification de l'état)
+SELLER_PAGES_PER_SCAN = 10     # + fiches relues après un changement de prix, pour savoir quel vendeur l'affiche
 
 
 class Scanner:
@@ -30,6 +31,7 @@ class Scanner:
         self.next_run = 0.0
         self.backoff: dict[str, tuple[float, int]] = {}   # source -> (jusqu'à, nb d'échecs)
         self.pending: list[tuple[float, str, str]] = []    # alertes du cycle (prix, type, texte)
+        self.price_changed: set[int] = set()               # offres Amazon dont le prix vient de bouger
 
     # ------------------------------------------------------------------ boucle
     def loop(self):
@@ -106,6 +108,7 @@ class Scanner:
             raws = src.scan(self.fetcher, cfg)
             found = len(raws)
             seen = set()
+            self.price_changed = set()   # offres dont le prix vient de changer (vendeur à relire)
             for r in raws:
                 oid, is_match = self.store(con, src, r, cfg)
                 if oid:
@@ -170,10 +173,16 @@ class Scanner:
             old_price = row["price_fr"]
             con.execute(f"UPDATE offers SET {','.join(k + '=?' for k in fields)} WHERE id=?", [*fields.values(), oid])
 
-        last = con.execute("SELECT ts, price_fr, in_stock FROM prices WHERE offer_id=? ORDER BY ts DESC LIMIT 1", (oid,)).fetchone()
-        if price_fr is not None and (last is None or last["price_fr"] != price_fr or last["in_stock"] != stock
-                                     or now - last["ts"] > HISTORY_EVERY):
-            con.execute("INSERT INTO prices VALUES(?,?,?,?)", (oid, now, price_fr, stock))
+        last = con.execute("SELECT ts, price_fr, in_stock, seller FROM prices WHERE offer_id=? ORDER BY ts DESC LIMIT 1",
+                           (oid,)).fetchone()
+        price_moved = last is None or last["price_fr"] != price_fr
+        if price_fr is not None and (price_moved or last["in_stock"] != stock or now - last["ts"] > HISTORY_EVERY):
+            # même prix : très probablement le même vendeur ; prix différent : vendeur à relire sur la fiche
+            seller = None if price_moved else last["seller"]
+            con.execute("INSERT INTO prices(offer_id, ts, price_fr, in_stock, seller) VALUES(?,?,?,?,?)",
+                        (oid, now, price_fr, stock, seller))
+            if price_moved and isinstance(src, Amazon):
+                self.price_changed.add(oid)
 
         is_match = db.matches(fields, cfg)
         if is_match and not was_match:
@@ -185,23 +194,41 @@ class Scanner:
         return oid, is_match
 
     def inspect_pages(self, con, src, cfg):
-        """Lit la fiche des offres Amazon « neuves » qui nous intéressent pour repérer
-        les reconditionnés que le titre ne signale pas (vendeur, description, avis)."""
-        near = dict(cfg, price_min=cfg["price_min"] * 0.85, price_max=cfg["price_max"] * 1.15,
-                    conditions=["neuf"])
+        """Lit des fiches produit Amazon :
+        - les offres « neuves » proches des critères, une fois par semaine, pour repérer les reconditionnés
+          que le titre ne signale pas (programme Renewed, description, avis) ;
+        - les offres proches des critères dont le prix vient de changer, pour savoir quel vendeur
+          affiche ce nouveau prix (changement de vendeur dans le panier, guerre de prix entre vendeurs).
+        Une fiche qui sert aux deux n'est lue qu'une fois."""
+        widen = dict(price_min=cfg["price_min"] * 0.85, price_max=cfg["price_max"] * 1.15)
+        near_new = dict(cfg, **widen, conditions=["neuf"])
+        near_any = dict(cfg, **widen, conditions=sorted(set(cfg["conditions"]) | {"neuf"}))
         rows = con.execute(
             "SELECT * FROM offers WHERE source=? AND active=1 AND condition='neuf' "
             "AND (page_checked IS NULL OR page_checked < ?) ORDER BY price_fr",
             (src.key, time.time() - PAGE_RECHECK)).fetchall()
-        todo = [r for r in rows if db.matches(dict(r), near)][:PAGES_PER_SCAN]
+        check_condition = [r for r in rows if db.matches(dict(r), near_new)][:PAGES_PER_SCAN]
+        changed = getattr(self, "price_changed", set())
+        moved = [r for r in con.execute("SELECT * FROM offers WHERE source=? AND active=1 ORDER BY price_fr", (src.key,))
+                 if r["id"] in changed and db.matches(dict(r), near_any)][:SELLER_PAGES_PER_SCAN]
+        todo, seen_ids = [], set()
+        for r in moved + check_condition:          # priorité aux prix qui viennent de bouger
+            if r["id"] not in seen_ids:
+                seen_ids.add(r["id"]); todo.append(r)
+        cond_ids = {r["id"] for r in check_condition}
         for r in todo:
             try:
                 info = inspect_page(self.fetcher.get(r["url"]))
             except (Blocked, Disallowed) as e:
                 log.info("%s : lecture des fiches interrompue (%s)", src.key, e)
                 break
-            con.execute("UPDATE offers SET page_checked=?, page_condition=?, page_src=?, page_note=?, seller=? WHERE id=?",
-                        (time.time(), info["condition"], info["src"], info["note"], info["seller"], r["id"]))
+            if info["seller"]:
+                self.record_seller(con, src, r, info["seller"])
+            if r["id"] not in cond_ids:            # fiche lue seulement pour le vendeur
+                con.commit()
+                continue
+            con.execute("UPDATE offers SET page_checked=?, page_condition=?, page_src=?, page_note=? WHERE id=?",
+                        (time.time(), info["condition"], info["src"], info["note"], r["id"]))
             if info["condition"]:
                 con.execute("UPDATE offers SET condition=?, condition_src=?, condition_note=? WHERE id=?",
                             (info["condition"], info["src"], info["note"], r["id"]))
@@ -209,6 +236,17 @@ class Scanner:
             elif info["note"]:
                 con.execute("UPDATE offers SET condition_note=? WHERE id=?", (info["note"], r["id"]))
             con.commit()
+
+    def record_seller(self, con, src, offer, seller):
+        """Note le vendeur sur l'offre et sur son dernier relevé de prix (s'il n'est pas encore connu)."""
+        previous = con.execute("SELECT seller FROM prices WHERE offer_id=? AND seller IS NOT NULL AND seller != '' "
+                               "ORDER BY ts DESC LIMIT 1", (offer["id"],)).fetchone()
+        con.execute("UPDATE offers SET seller=? WHERE id=?", (seller, offer["id"]))
+        con.execute("UPDATE prices SET seller=? WHERE offer_id=? AND (seller IS NULL OR seller='') "
+                    "AND ts=(SELECT MAX(ts) FROM prices WHERE offer_id=?)", (seller, offer["id"], offer["id"]))
+        if previous and previous["seller"] != seller:
+            log.info("%s : changement de vendeur sur « %s » : %s → %s (%.0f €)", src.key, offer["title"][:50],
+                     previous["seller"], seller, offer["price_fr"] or 0)
 
     def event(self, con, oid, price, kind, text):
         con.execute("INSERT INTO events(ts,offer_id,kind,text) VALUES(?,?,?,?)", (time.time(), oid, kind, text))

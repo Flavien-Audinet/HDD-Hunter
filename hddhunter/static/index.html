@@ -359,19 +359,32 @@ async function drawHist(o){
   const pts = await fetch("/api/history/" + o.id).then(r => r.json());
   $("#histTitle").textContent = `${o.family || o.brand} ${o.capacity_tb} To — ${o.site} ${o.country}`;
   const lo = Math.min(...pts.map(p => p.price_fr)), hi = Math.max(...pts.map(p => p.price_fr));
-  $("#histHint").innerHTML = `${pts.length} relevé(s) · plus bas ${eur(lo)} · plus haut ${eur(hi)} · <a href="${esc(o.url)}" target="_blank">ouvrir la fiche ↗</a>`;
+  // vendeur de chaque relevé ; un triangle marque chaque relevé où le vendeur a changé
+  let known = "";
+  const changes = pts.map(p => { const s = p.seller || ""; const c = !!(s && known && s !== known); if (s) known = s; return c; });
+  const sellers = [...new Set(pts.map(p => p.seller).filter(Boolean))];
+  const nChg = changes.filter(Boolean).length;
+  const sellerTxt = sellers.length ? ` · ${sellers.length} vendeur${sellers.length > 1 ? "s" : ""} : ${sellers.map(esc).join(", ")}`
+    + (nChg ? ` · <b>${nChg} changement${nChg > 1 ? "s" : ""} de vendeur</b> (▲)` : "") : "";
+  $("#histHint").innerHTML = `${pts.length} relevé(s) · plus bas ${eur(lo)} · plus haut ${eur(hi)}${sellerTxt} · <a href="${esc(o.url)}" target="_blank">ouvrir la fiche ↗</a>`;
   const now = Date.now()/1000;
-  const data = pts.map(p => ({x: p.ts, y: p.price_fr}));
-  if (data.length) data.push({x: Math.max(now, data[data.length-1].x), y: data[data.length-1].y});  // prolonge jusqu'à maintenant
+  const data = pts.map((p, i) => ({x: p.ts, y: p.price_fr, seller: p.seller || "", changed: changes[i]}));
+  if (data.length) data.push({...data[data.length-1], x: Math.max(now, data[data.length-1].x), changed: false, tail: true});  // prolonge jusqu'à maintenant
   const opt = baseOpts();
   opt.scales.x = {type:"linear", grid:{display:false}, border:{color:css("--grid")},
     ticks:{maxTicksLimit:6, maxRotation:0, callback: v => new Date(v*1000).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}};
   opt.plugins.tooltip.callbacks = {title: it => new Date(it[0].parsed.x*1000).toLocaleString("fr-FR",{dateStyle:"medium",timeStyle:"short"}),
-    label: c => " " + eur(c.parsed.y)};
+    label: c => { const d = c.raw; const l = [" " + eur(c.parsed.y)];
+      if (d.seller) l.push(` vendu par ${d.seller}`); else if (o.source?.startsWith("amazon")) l.push(" vendeur non relevé");
+      if (d.changed) l.push(" ▲ nouveau vendeur"); return l; }};
   opt.scales.y.suggestedMin = lo * 0.95; opt.scales.y.suggestedMax = hi * 1.05;
+  const small = data.length < 20;
   histChart?.destroy();
   histChart = new Chart($("#histChart"), {type:"line", data:{datasets:[{data, stepped:"before", borderColor:css("--s1"),
-    backgroundColor:css("--s1"), borderWidth:2, pointRadius: data.length < 20 ? 4 : 0, pointHoverRadius:5}]}, options:opt});
+    backgroundColor:css("--s1"), borderWidth:2, pointHoverRadius:6,
+    pointStyle: data.map(d => d.changed ? "triangle" : "circle"),
+    pointRadius: data.map(d => d.tail ? 0 : d.changed ? 7 : small ? 4 : 0),
+    pointBorderColor: css("--surface"), pointBorderWidth: data.map(d => d.changed ? 2 : 0)}]}, options:opt});
 }
 
 function drawSites(){
@@ -411,17 +424,19 @@ function drawUrls(){
   const crit = $("#urlCrit").checked, gone = $("#urlGone").checked;
   const any = {...cfg, price_min: 0, price_max: 1e9};
   let rows = urlData.map(o => { const ys = o.points.map(p => p[1]);
+    const ss = o.points.map(p => p[2]).filter(Boolean);
     return {...o, first: o.points[0][0], p0: ys[0], last: ys.at(-1), min: Math.min(...ys), max: Math.max(...ys),
-            delta: (ys.at(-1) - ys[0]) / ys[0] * 100, n: ys.length}; })
+            delta: (ys.at(-1) - ys[0]) / ys[0] * 100, n: ys.length,
+            nowSeller: ss.at(-1) || o.seller || "", nSellers: new Set(ss).size}; })
     .filter(o => (gone || o.active) && (!crit || matches({...o, price_fr: o.last, in_stock: 1}, any)))
-    .filter(o => q.every(w => `${o.title} ${o.url} ${o.site} ${o.country} ${o.condition} ${o.seller || ""}`.toLowerCase().includes(w)));
+    .filter(o => q.every(w => `${o.title} ${o.url} ${o.site} ${o.country} ${o.condition} ${o.nowSeller} ${o.seller || ""}`.toLowerCase().includes(w)));
   rows.sort((a, b) => { const x = a[uSort], y = b[uSort]; return (typeof x === "string" ? x.localeCompare(y) : x - y) * uDir; });
   $("#urlTitle").textContent = `Historique des URL (${rows.length})`;
   const dt = ts => new Date(ts * 1000).toLocaleDateString("fr-FR", {day: "numeric", month: "short", year: "2-digit"});
   $("#urlRows").innerHTML = rows.slice(0, 300).map(o => `<tr>
     <td class="title" title="${esc(o.title)}"><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a>
       <div class="est" style="font-size:11.5px">${esc(o.url.replace(/^https?:\/\/(www\.)?/, ""))}${o.active ? "" : " · retiré de la vente"}</div></td>
-    <td>${esc(o.site)} ${FLAGS[o.country] || o.country}</td>
+    <td>${esc(o.site)} ${FLAGS[o.country] || o.country}${o.nowSeller ? `<div class="est" style="font-size:11.5px">${esc(o.nowSeller)}${o.nSellers > 1 ? ` · ${o.nSellers} vendeurs` : ""}</div>` : ""}</td>
     <td>${condBadge(o)}</td>
     <td class="num est">${dt(o.first)}</td>
     <td class="num">${eur(o.p0)}</td>

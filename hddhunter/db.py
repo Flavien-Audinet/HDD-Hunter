@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, ts REAL, offer_id INTE
 NEW_COLUMNS = {
     "offers": ["condition_src TEXT DEFAULT 'titre'", "condition_note TEXT DEFAULT ''", "seller TEXT DEFAULT ''",
                "page_checked REAL", "page_condition TEXT", "page_src TEXT", "page_note TEXT"],
+    "prices": ["seller TEXT"],   # vendeur qui affichait ce prix (Amazon : celui qui tient le panier)
 }
 
 

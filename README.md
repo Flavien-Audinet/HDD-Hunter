@@ -24,6 +24,7 @@ Seagate Exos · WD Ultrastar / Gold · Toshiba MG — neufs ou reconditionnés, 
 - 🌍 **Compare les pays** : Amazon FR, DE, IT, ES, NL, BE — le prix est converti en **prix livré France** (la TVA locale est remplacée par la TVA française, comme le fait la boutique à la commande).
 - ♻️ **Neuf ou reconditionné ?** détecté en 3 niveaux (titre, référence du disque, fiche produit et avis clients), avec le vendeur affiché.
 - 📈 **Historique des prix** de chaque URL, même retirée de la vente, avec courbes et export CSV.
+- 🏷️ **Vendeur de chaque prix** : sur Amazon, la fiche est relue après chaque changement de prix pour savoir quel vendeur tient le panier ; les changements de vendeur sont marqués ▲ sur la courbe (guerres de prix entre vendeurs, « repricers »).
 - 🔔 **Notification macOS** groupée à chaque nouvelle offre ou baisse de prix de plus de 3 %.
 - 🤝 **Bon voisin** : respecte `robots.txt`, 5 à 10 s entre deux requêtes, pause automatique si un site dit stop. Aucun contournement de protection anti-robots.
 
@@ -35,7 +36,7 @@ Seagate Exos · WD Ultrastar / Gold · Toshiba MG — neufs ou reconditionnés, 
 | **Critères** | prix, capacité, cache, vitesse, classe (serveur / NAS pro), état, interface SATA / SAS |
 | **Graphiques** | meilleur prix par capacité dans le temps · historique d'une offre · meilleur prix par site |
 | **Offres** | tableau triable, badge Neuf / Reconditionné (survol = raison), vendeur, pays |
-| **Historique des URL** | prix de départ, actuel, min, max, évolution, mini-courbe, recherche, export CSV |
+| **Historique des URL** | prix de départ, actuel, min, max, évolution, vendeur actuel et nombre de vendeurs, mini-courbe, recherche, export CSV |
 | **Sites** | état de chaque boutique (ok / vide / bloqué), activer / désactiver |
 | **Liens manuels** | idealo, LeDénicheur, Geizhals, Proshop… (sites qui refusent les robots) |
 
@@ -77,7 +78,7 @@ flowchart LR
 1. **Collecte** : chaque boutique a son module (`hddhunter/sources/`) qui lit la page catégorie ou la recherche, puis la fiche produit si le prix n'est pas dans la liste.
 2. **Lecture des caractéristiques** (`specs.py`) : capacité, vitesse, interface et famille sont extraites du titre ; le cache est déduit de la famille quand il n'est pas écrit (marqué « ~ » dans l'interface).
 3. **Prix livré France** : `prix / (1 + TVA locale) × 1,20` (règles UE de vente à distance). Frais de port Amazon étranger non inclus.
-4. **Stockage** : un relevé est ajouté à chaque changement de prix ou de stock, et au moins toutes les 6 h — aucune variation n'est perdue.
+4. **Stockage** : un relevé est ajouté à chaque changement de prix ou de stock, et au moins toutes les 6 h — aucune variation n'est perdue. Chaque relevé garde le vendeur qui affichait ce prix. Les graphiques reprennent le dernier prix connu d'une offre tant qu'elle est en vente.
 
 ### ♻️ Neuf ou reconditionné ?
 
